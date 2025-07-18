@@ -9,7 +9,7 @@
 ### 核心功能
 
 - **🗺️ 智能地图服务**: 基于GSI（地理空间信息）数据的地图展示
-- **🤖 AI路线规划**: 智能推荐个性化旅行路线
+- **🤖 AI智能助手**: 基于百度千问大模型的智能对话和路线规划
 - **📖 攻略中心**: 用户分享和浏览旅行攻略
 - **👥 社区互动**: 创作者经济模式，支持内容分享
 - **🎯 多出行方式**: 支持徒步、骑行、摩托、自驾、房车
@@ -20,6 +20,7 @@
 - **框架**: Spring Boot 3.5.3 + Java 17
 - **数据库**: PostgreSQL + Redis
 - **地理数据**: GSI（地理空间信息）存储
+- **AI服务**: 百度千问大模型集成
 - **安全**: Spring Security
 - **文档**: SpringDoc OpenAPI
 - **其他**: JPA、邮件服务、验证等
@@ -125,6 +126,13 @@ spring.datasource.username=postgres
 spring.datasource.password=postgres
 ```
 
+3. 配置百度千问API（可选，用于AI智能助手功能）：
+```properties
+baidu.qwen.app-id=your-app-id-here
+baidu.qwen.api-key=your-api-key-here
+baidu.qwen.secret-key=your-secret-key-here
+```
+
 ### 启动服务
 
 #### 方式一：使用启动脚本（推荐）
@@ -184,6 +192,15 @@ npm run dev
 
 - `POST /api/routes/generate` - 生成推荐路线
 - `POST /api/routes/optimize/{routeId}` - 优化推荐路线
+
+### AI智能助手接口
+
+- `POST /api/ai/chat` - AI智能对话
+- `GET /api/ai/chat/stream` - 流式AI对话
+- `POST /api/ai/recommendations/route` - AI路线推荐
+- `POST /api/ai/generate/guide` - AI生成旅行指南
+- `GET /api/ai/test-baidu` - 测试百度千问API
+- `GET /api/ai/service-status` - 获取AI服务状态
 
 ### 地图服务接口
 
@@ -281,6 +298,58 @@ public RoutePlanResponse generateRoute(RoutePlanRequest request) {
 - **交通设施**: 火车站、机场等
 - **露营点**: 各地露营基地
 - **观景台**: 各地观景台
+
+## 🤖 AI智能助手配置
+
+### 百度千问API配置
+
+项目集成了百度千问大模型，提供智能对话和路线规划功能。
+
+#### 获取API密钥
+
+1. 访问 [百度智能云](https://cloud.baidu.com/)
+2. 注册并登录您的账户
+3. 进入 [千问大模型](https://cloud.baidu.com/product/wenxinworkshop) 产品页面
+4. 创建应用并获取以下信息：
+   - App ID
+   - API Key
+   - Secret Key
+
+#### 配置参数
+
+在 `application.properties` 中配置：
+
+```properties
+# 百度千问API配置
+baidu.qwen.app-id=your-app-id-here
+baidu.qwen.api-key=your-api-key-here
+baidu.qwen.secret-key=your-secret-key-here
+baidu.qwen.model=qwen-turbo
+baidu.qwen.temperature=0.7
+baidu.qwen.max-tokens=2048
+```
+
+#### 功能特性
+
+- **智能对话**: 支持自然语言交互
+- **路线规划**: 基于用户需求生成个性化路线
+- **攻略生成**: 自动生成旅行攻略
+- **流式响应**: 支持实时流式对话
+- **错误处理**: 完善的错误处理和降级策略
+
+#### 测试API
+
+启动应用后，可以通过以下接口测试：
+
+```bash
+# 测试百度千问API
+curl "http://localhost:8080/api/ai/test-baidu?message=你好"
+
+# 获取服务状态
+curl "http://localhost:8080/api/ai/service-status"
+```
+
+详细配置说明请参考 [BAIDU_QWEN_SETUP.md](short-trip-background/BAIDU_QWEN_SETUP.md)
 
 ## 📝 贡献指南
 
