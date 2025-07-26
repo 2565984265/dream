@@ -1,0 +1,195 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:14-alpine  # 使用alpine版本减少内存占用
+    environment:
+      POSTGRES_DB: short_trip_db
+      POSTGRES_USER: shorttrip
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-shorttrip123}
+      # PostgreSQL内存优化配置
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./short-trip-background/src/main/resources/db:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    # 限制PostgreSQL内存使用
+    deploy:
+      resources:
+        limits:
+          memory: 400M
+        reservations:
+          memory: 256M
+    # PostgreSQL配置优化
+    command: |
+      postgres
+      -c shared_buffers=128MB
+      -c effective_cache_size=256MB
+      -c maintenance_work_mem=32MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=8MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=2MB
+      -c min_wal_size=1GB
+      -c max_wal_size=2GB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shorttrip"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine  # 使用alpine版本
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    # 限制Redis内存使用
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+        reservations:
+          memory: 64M
+    # Redis配置优化
+    command: |
+      redis-server
+      --maxmemory 80mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  backend:
+    build: 
+      context: ./short-trip-background
+      dockerfile: Dockerfile.optimized
+    environment:
+      # 数据库配置
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/short_trip_db
+      SPRING_DATASOURCE_USERNAME: shorttrip
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-shorttrip123}
+      
+      # Redis配置
+      SPRING_DATA_REDIS_HOST: redis
+      
+      # JVM内存优化
+      JAVA_OPTS: >
+        -Xmx800m
+        -Xms400m
+        -XX:+UseG1GC
+        -XX:MaxGCPauseMillis=200
+        -XX:+UseContainerSupport
+        -XX:MaxRAMPercentage=75.0
+        -Djava.security.egd=file:/dev/./urandom
+        -Dspring.profiles.active=production,docker
+      
+      # Spring Boot配置优化
+      SPRING_JPA_SHOW_SQL: false
+      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: false
+      LOGGING_LEVEL_ORG_HIBERNATE: WARN
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK: WARN
+      
+      # 连接池优化
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 5
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: 2
+      SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: 20000
+      
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    # 限制后端内存使用
+    deploy:
+      resources:
+        limits:
+          memory: 900M
+        reservations:
+          memory: 600M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./short-trip-front
+      dockerfile: Dockerfile.optimized
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost/api
+      NODE_ENV: production
+      # Node.js内存优化
+      NODE_OPTIONS: "--max-old-space-size=300"
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    # 限制前端内存使用
+    deploy:
+      resources:
+        limits:
+          memory: 400M
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx-2g.conf:/etc/nginx/nginx.conf:ro
+      - ./logs:/var/log/nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - frontend
+      - backend
+    # Nginx内存使用很少
+    deploy:
+      resources:
+        limits:
+          memory: 50M
+        reservations:
+          memory: 32M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# 网络配置
+networks:
+  default:
+    driver: bridge 
